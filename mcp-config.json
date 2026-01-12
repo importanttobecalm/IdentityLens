@@ -1,0 +1,191 @@
+{
+    "name": "IdentityLens MCP Configuration",
+    "version": "1.0.0",
+    "description": "Neural Integration Module with MCP Context7 tools",
+    "mcp_server": {
+        "provider": "context7",
+        "api_url": "https://mcp.context7.com/mcp",
+        "api_key_env": "CONTEXT7_API_KEY"
+    },
+    "tools": [
+        {
+            "name": "image_segmentation",
+            "description": "Advanced face and body segmentation for precise masking",
+            "endpoint": "/tools/segmentation",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "image_base64": {
+                        "type": "string",
+                        "description": "Base64 encoded image from IdentityPacket"
+                    },
+                    "segmentation_type": {
+                        "type": "string",
+                        "enum": [
+                            "face",
+                            "body",
+                            "hair",
+                            "clothing"
+                        ],
+                        "default": "face"
+                    },
+                    "precision": {
+                        "type": "string",
+                        "enum": [
+                            "low",
+                            "medium",
+                            "high"
+                        ],
+                        "default": "high"
+                    }
+                },
+                "required": [
+                    "image_base64"
+                ]
+            },
+            "output_schema": {
+                "type": "object",
+                "properties": {
+                    "mask_base64": {
+                        "type": "string",
+                        "description": "Binary mask as base64"
+                    },
+                    "confidence": {
+                        "type": "number",
+                        "description": "Segmentation confidence (0-1)"
+                    },
+                    "processing_time_ms": {
+                        "type": "number"
+                    }
+                }
+            }
+        },
+        {
+            "name": "face_alignment",
+            "description": "Neural face alignment and landmark detection",
+            "endpoint": "/tools/alignment",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "image_base64": {
+                        "type": "string",
+                        "description": "Base64 encoded face image"
+                    },
+                    "alignment_mode": {
+                        "type": "string",
+                        "enum": [
+                            "landmarks_68",
+                            "landmarks_468",
+                            "dense_mesh"
+                        ],
+                        "default": "landmarks_468"
+                    },
+                    "normalize": {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "Normalize face rotation and scale"
+                    }
+                },
+                "required": [
+                    "image_base64"
+                ]
+            },
+            "output_schema": {
+                "type": "object",
+                "properties": {
+                    "landmarks": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "x": {
+                                    "type": "number"
+                                },
+                                "y": {
+                                    "type": "number"
+                                },
+                                "z": {
+                                    "type": "number"
+                                }
+                            }
+                        }
+                    },
+                    "aligned_face_base64": {
+                        "type": "string",
+                        "description": "Aligned and cropped face"
+                    },
+                    "transform_matrix": {
+                        "type": "array",
+                        "items": {
+                            "type": "number"
+                        }
+                    }
+                }
+            }
+        },
+        {
+            "name": "neural_blending",
+            "description": "Advanced neural blending to eliminate pasted effect",
+            "endpoint": "/tools/blending",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "subject_image_base64": {
+                        "type": "string",
+                        "description": "Generated subject from Flux"
+                    },
+                    "background_image_base64": {
+                        "type": "string",
+                        "description": "Scene background"
+                    },
+                    "mask_base64": {
+                        "type": "string",
+                        "description": "Subject mask from segmentation"
+                    },
+                    "blend_mode": {
+                        "type": "string",
+                        "enum": [
+                            "soft",
+                            "medium",
+                            "hard"
+                        ],
+                        "default": "medium"
+                    },
+                    "preserve_detail": {
+                        "type": "boolean",
+                        "default": true
+                    }
+                },
+                "required": [
+                    "subject_image_base64",
+                    "background_image_base64",
+                    "mask_base64"
+                ]
+            },
+            "output_schema": {
+                "type": "object",
+                "properties": {
+                    "blended_image_base64": {
+                        "type": "string"
+                    },
+                    "edge_quality_score": {
+                        "type": "number",
+                        "description": "0-1 score for edge seamlessness"
+                    }
+                }
+            }
+        }
+    ],
+    "integration_settings": {
+        "timeout_ms": 30000,
+        "retry_attempts": 3,
+        "fallback_to_local": true,
+        "cache_results": true,
+        "max_concurrent_calls": 2
+    },
+    "identity_packet_mapping": {
+        "image_source": "identityPacket.image.cleanFace",
+        "metadata_source": "identityPacket.metadata",
+        "quality_threshold": 0.85
+    }
+}

@@ -21,7 +21,9 @@ import com.identitylens.app.R
 import com.identitylens.app.metadata.LightSensorManager
 import com.identitylens.app.models.*
 import com.identitylens.app.quality.*
+import com.identitylens.app.integration.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.collect
 import java.io.ByteArrayOutputStream
 import java.text.SimpleDateFormat
 import java.util.*
@@ -56,6 +58,10 @@ class CaptureActivity : AppCompatActivity() {
     
     private val qualityAnalyzer = ImageQualityAnalyzer()
     
+    // Neural Integration Module (MCP Context7)
+    private var isNeuralProcessingEnabled: Boolean = false  // Toggle for neural processing
+    private lateinit var neuralIntegrationModule: NeuralIntegrationModule
+    
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_capture)
@@ -66,6 +72,16 @@ class CaptureActivity : AppCompatActivity() {
         
         cameraExecutor = Executors.newSingleThreadExecutor()
         lightSensorManager = LightSensorManager(this)
+        
+        // Initialize neural integration module
+        val context7ApiKey = "ctx7sk-fdefd1bc-707a-4b00-8242-82cc63b5787b"  // From user config
+        neuralIntegrationModule = NeuralIntegrationModule(this, context7ApiKey)
+        
+        // Check if neural processing is available
+        lifecycleScope.launch {
+            isNeuralProcessingEnabled = neuralIntegrationModule.isAvailable()
+            Log.d(TAG, "Neural Processing Available: $isNeuralProcessingEnabled")
+        }
         
         setupCamera()
         setupButtons()
@@ -259,12 +275,72 @@ class CaptureActivity : AppCompatActivity() {
         val json = identityPacket.toJson()
         Log.d(TAG, "Identity Packet created: ${json.take(200)}...")
         
-        runOnUiThread {
-            Toast.makeText(
-                this@CaptureActivity,
-                "✓ Image captured successfully!",
-                Toast.LENGTH_SHORT
-            ).show()
+        // Neural Processing Stream (if enabled)
+        if (isNeuralProcessingEnabled) {
+            runOnUiThread {
+                Toast.makeText(
+                    this@CaptureActivity,
+                    "🧠 Neural işleme başlatılıyor...",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+            
+            // Process with neural integration
+            neuralIntegrationModule.processNeuralIntegration(
+                identityPacket = identityPacket,
+                options = NeuralProcessingOptions(
+                    enableSegmentation = true,
+                    enableAlignment = true,
+                    enableBlending = false,  // Blending happens later in pipeline
+                    precision = SegmentationPrecision.HIGH
+                )
+            ).collect { result ->
+                when (result) {
+                    is NeuralProcessingResult.Progress -> {
+                        Log.d(TAG, "Neural Progress: ${result.stage} - ${result.progress}")
+                        runOnUiThread {
+                            textViewFeedback.text = result.message
+                        }
+                    }
+                    
+                    is NeuralProcessingResult.Success -> {
+                        Log.d(TAG, "Neural processing complete!")
+                        Log.d(TAG, "  Segmentation mask: ${result.segmentationMask?.take(50)}")
+                        Log.d(TAG, "  Aligned face: ${result.alignedFace?.take(50)}")
+                        
+                        runOnUiThread {
+                            Toast.makeText(
+                                this@CaptureActivity,
+                                "✅ Neural işlem tamamlandı!",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                        
+                        // TODO: Add enhanced data to identity packet
+                        // Enhanced packet can be sent to cloud API
+                    }
+                    
+                    is NeuralProcessingResult.Error -> {
+                        Log.e(TAG, "Neural processing error: ${result.message}")
+                        runOnUiThread {
+                            Toast.makeText(
+                                this@CaptureActivity,
+                                "⚠️ Neural işlem hatası (fallback kullanılıyor)",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                        // Continue with standard processing
+                    }
+                }
+            }
+        } else {
+            runOnUiThread {
+                Toast.makeText(
+                    this@CaptureActivity,
+                    "✓ Image captured successfully!",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
         }
         
         // TODO: Upload to cloud API
