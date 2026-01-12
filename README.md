@@ -245,6 +245,73 @@ if (result is GenerationResult.Success) {
 
 Detaylı dokümantasyon: [backend/README.md](backend/README.md)
 
+## 🎨 Interactive UI (Jetpack Compose)
+
+### Mimari
+
+```
+CaptureActivity → StyleSelectorScreen → ResultScreen
+```
+
+### Özellikler
+
+- ✅ **Dynamic Style Carousel**: Gemini-önerili stil kategorileri
+- ✅ **Clothing Modifier**: 11 hazır kıyafet seçeneği
+- ✅ **Inpainting Mask Tool**: Dokunmatik maskeleme aracı
+- ✅ **Preview Engine**: 3-aşamalı önizleme (Low-Res → Review → Final)
+- ✅ **Progressive Feedback**: Türkçe durum mesajları
+- ✅ **Minimalist Design**: Teknik detaylar gizli
+
+### Ana Bileşenler
+
+#### 1. DynamicStyleCarousel
+7 stil kategorisi:
+- Cyberpunk 🌃
+- Rönesans🎨
+- Profesyonel 💼
+- Vintage 📷
+- Sinematik 🎬
+- Anime ✨
+- Fantezi 🔮
+
+#### 2. InpaintingMaskDialog
+- Fırça boyutu kontrolü (10-50px)
+- Geri al / Temizle
+- Dokunmatik çizim
+
+#### 3. PreviewEngine
+**State Machine:**
+```
+Idle → Loading → Previewing → Finalizing → Complete
+```
+
+### Kullanım
+
+```kotlin
+StyleSelectorScreen(
+    identityPacket = identityPacket,
+    imageUri = imageUri,
+    onComplete = { finalImageUrl ->
+        // Sonuç göster
+    }
+)
+```
+
+### State Yönetimi
+
+```kotlin
+sealed class StyleSelectorState {
+    object Idle
+    data class Loading(progress: Float, message: String)
+    data class Previewing(imageUrl: String, selectedStyle: StyleCategory)
+    data class Finalizing(progress: Float, message: String)
+    data class Complete(imageUrl: String, metadata: GenerationMetadata)
+    data class Error(message: String, canRetry: Boolean)
+}
+```
+
+Detaylı kullanım: [UI_COMPONENTS_GUIDE.md](UI_COMPONENTS_GUIDE.md)
+
 ## 🔧 Özelleştirme
 
 ### Threshold Değerlerini Ayarlama
