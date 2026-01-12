@@ -15,28 +15,15 @@ from flux_api_client import (
     InferenceResult,
     ErrorCodes
 )
+from refinement_processor import RefinementProcessor
+from validation_module import IdentityValidator, QualityMetrics, DataPurgeProtocol
+from export_module import ImageExporter
 
-app = FastAPI(
-    title="IdentityLens Cloud Inference API",
-    description="Flux.1 + PuLID identity-preserving image generation",
-    version="1.0.0"
-)
-
-# CORS for Android app
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Configure properly in production
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Initialize Flux client
-FAL_API_KEY = os.getenv("FAL_API_KEY")
-if not FAL_API_KEY:
-    raise ValueError("FAL_API_KEY environment variable not set")
-
+# Initialize processors
 flux_client = FluxPuLIDClient(api_key=FAL_API_KEY, provider="fal")
+refinement_processor = RefinementProcessor(upscale_factor=4, enable_upscale=True)
+identity_validator = IdentityValidator(model_name="ArcFace")
+image_exporter = ImageExporter()
 
 
 # Request/Response Models
@@ -47,7 +34,170 @@ class GenerationRequest(BaseModel):
     mode: str = Field(default="speed", description="Generation mode: speed or quality")
     lighting_params: Optional[Dict[str, Any]] = Field(None, description="Lighting parameters")
     enable_harmonization: bool = Field(default=True, description="Enable harmonization")
-    denoising_strength: float = Field(default=0.40, ge=0.35, le=0.45, description="Denoising strength")
+    denoising_strength: float = Field(default=0.40, ge=0.30, le=0.45, description="Denoising strength")
+    
+    # Refinement options
+    enable_refinement: bool = Field(default=True, description="Enable post-processing refinement")
+    enable_upscale: bool = Field(default=False, description="Enable 4x upscaling")
+    
+    # Validation options
+    enable_validation: bool = Field(default=True, description="Enable identity validation")
+    
+    # Export options
+    export_format: str = Field(default="webp", description="Output format: jpeg, webp, heif")
+    add_watermark: bool = Field(default=True, description="Add SynthID watermark")
+
+
+class GenerationResponse(BaseModel):
+    success: bool
+    image_url: Optional[str] = None
+    image_base64: Optional[str] = None
+    inference_time: float
+    model_version: str
+    seed: int = -1
+    
+    # Refinement metrics
+    refinement_metrics: Optional[Dict[str, Any]] = None
+    
+    # Validation results
+    validation_results: Optional[Dict[str, Any]] = None
+    
+    # Quality metrics
+    quality_metrics: Optional[Dict[str, Any]] = None
+    
+    error: Optional[Dict[str, Any]] = None
+
+
+@app.post("/api/generate", response_model=GenerationResponse)
+async def generate_image(request: GenerationRequest):
+    """
+    Generate identity-preserved image with refinement and validation
+    """
+    
+    try:
+        # Convert mode string to enum
+        mode = (
+            GenerationMode.SPEED if request.mode == "speed"
+            else GenerationMode.QUALITY
+        )
+        
+        # Step 1: Generate with Flux + PuLID
+        print("🎨 Step 1: Flux.1 + PuLID Generation...")
+        result: InferenceResult = flux_client.generate_with_retry(
+            identity_packet=request.identity_packet,
+            master_prompt=request.master_prompt,
+            negative_prompt=request.negative_prompt,
+            mode=mode,
+            max_retries=3
+        )
+        
+        if not result.success:
+            return GenerationResponse(
+                success=False,
+                inference_time=result.inference_time,
+                model_version="",
+                error={
+                    "code": result.error_code,
+                    "message": result.error_message
+                }
+            )
+        
+        # Load generated image
+        import requests
+        import cv2
+        import numpy as np
+        
+        img_response = requests.get(result.image_url)
+        img_array = np.asarray(bytearray(img_response.content), dtype=np.uint8)
+        flux_output = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+        flux_output = cv2.cvtColor(flux_output, cv2.COLOR_BGR2RGB)
+        
+        # Load reference image
+        ref_b64 = request.identity_packet["image"]["cleanFace"]
+        ref_data = base64.b64decode(ref_b64)
+        ref_array = np.frombuffer(ref_data, dtype=np.uint8)
+        reference_image = cv2.imdecode(ref_array, cv2.IMREAD_COLOR)
+        reference_image = cv2.cvtColor(reference_image, cv2.COLOR_BGR2RGB)
+        
+        # Step 2: Refinement (optional)
+        refined_image = flux_output
+        refinement_metrics = None
+        
+        if request.enable_refinement:
+            print("✨ Step 2: Post-Processing Refinement...")
+            refined_image, refinement_metrics = refinement_processor.process(
+                flux_output=flux_output,
+                reference_image=reference_image,
+                prompt=request.master_prompt,
+                denoise_strength=request.denoising_strength
+            )
+        
+        # Step 3: Validation (optional)
+        validation_results = None
+        
+        if request.enable_validation:
+            print("🔍 Step 3: Identity Validation...")
+            is_valid, validation_results = identity_validator.validate(
+                reference_image=reference_image,
+                generated_image=refined_image
+            )
+            
+            if not is_valid:
+                print(f"⚠️  Low similarity: {validation_results.get('similarity_score', 0):.2%}")
+        
+        # Step 4: Quality Metrics
+        print("📊 Step 4: Quality Analysis...")
+        quality_metrics = QualityMetrics.calculate_all(refined_image)
+        
+        # Step 5: Export
+        print("📤 Step 5: Export...")
+        export_metadata = {
+            "model": result.model_version,
+            "prompt": request.master_prompt[:200],
+            "processing_time": result.inference_time + (refinement_metrics.get("processing_time", 0) if refinement_metrics else 0)
+        }
+        
+        image_bytes, filename = image_exporter.export(
+            image=refined_image,
+            output_format=request.export_format,
+            quality=95,
+            add_watermark=request.add_watermark,
+            metadata=export_metadata
+        )
+        
+        # Upload to storage (or return base64)
+        import base64
+        image_base64 = base64.b64encode(image_bytes).decode()
+        
+        # Step 6: Data Purge (privacy)
+        identity_id = request.identity_packet.get("captureId", "unknown")
+        temp_dir = "/tmp/identitylens"
+        DataPurgeProtocol.purge_embeddings(temp_dir, identity_id)
+        
+        # Response
+        return GenerationResponse(
+            success=True,
+            image_url=result.image_url,  # Original Flux output
+            image_base64=image_base64,  # Refined output
+            inference_time=result.inference_time,
+            model_version=result.model_version,
+            seed=result.seed,
+            refinement_metrics=refinement_metrics,
+            validation_results=validation_results,
+            quality_metrics=quality_metrics
+        )
+    
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": ErrorCodes.API_ERROR,
+                "message": str(e)
+            }
+        )
+
+
+import base64
 
 
 class GenerationResponse(BaseModel):
