@@ -155,6 +155,96 @@ if (result.passed) {
 - **Min Size**: 30% of frame
 - **Max Size**: 60% of frame
 
+## 🌉 Prompt Engine (Semantic Bridge)
+
+### Özellikler
+- ✅ Türkçe doğal dil işleme
+- ✅ Flux.1 PuLID için optimize edilmiş promptlar
+- ✅ Gemini 2.5 Flash entegrasyonu (sahne analizi)
+- ✅ Dinamik negatif prompt oluşturma
+- ✅ Token optimizasyonu (< 160 token)
+- ✅ Zero-shot kimlik koruma
+
+### Kullanım
+
+```kotlin
+val promptEngine = PromptEngine()
+
+val result = promptEngine.generatePrompts(
+    userIntent = "Beni 1920'ler Paris'inde, yağmurlu bir sokakta göster.",
+    imageMetadata = metadata
+)
+
+// Flux Prompt: "A person with exact facial features from reference..."
+// Gemini Instruction: "Transform the person into 1920s Paris..."
+// UI Feedback: "Paris sokakları 1920'ler dönemi hazırlanıyor... 🌧️"
+```
+
+Detaylı kullanım için: [PROMPT_ENGINE_GUIDE.md](PROMPT_ENGINE_GUIDE.md)
+
+## ☁️ Cloud Inference Pipeline
+
+### Mimari
+
+```
+Android App → FastAPI Server → Fal.ai → Flux.1 + PuLID → Harmonization → Output
+```
+
+### Backend Setup
+
+```bash
+cd backend
+pip install -r requirements.txt
+
+# Configure
+cp .env.example .env
+# Edit .env: FAL_API_KEY=your_key_here
+
+# Run server
+python api_server.py
+```
+
+### Android Entegrasyonu
+
+```kotlin
+val client = CloudInferenceClient(
+    baseUrl = "https://your-server.com",
+    apiKey = "your_api_key"
+)
+
+val result = client.generateWithRetry(
+    identityPacket = identityPacket,
+    masterPrompt = promptEngineOutput.fluxMasterPrompt,
+    negativePrompt = promptEngineOutput.negativePrompt,
+    mode = GenerationMode.SPEED
+)
+
+if (result is GenerationResult.Success) {
+    // Load image from result.imageUrl
+}
+```
+
+### Model Konfigürasyonu
+
+**Speed Mode (Flux schnell):**
+- Inference: 4-6 saniye
+- Kalite: Çok İyi
+- Maliyet: ~$0.025/görsel
+
+**Quality Mode (Flux dev):**
+- Inference: 8-10 saniye
+- Kalite: Mükemmel
+- Maliyet: ~$0.055/görsel
+
+### PuLID Ayarları
+
+- **Fidelity Weight**: 0.85 (kimlik benzerliği)
+- **Harmonization**: 0.40 denoising (cilt dokusunu korur)
+- **Face Detection**: RetinaFace
+- **Embedding**: ArcFace R100
+
+Detaylı dokümantasyon: [backend/README.md](backend/README.md)
+
 ## 🔧 Özelleştirme
 
 ### Threshold Değerlerini Ayarlama
@@ -173,24 +263,13 @@ private const val MIN_LUX = 200.0
 private const val MAX_LUX = 1000.0
 ```
 
-### Cloud API Endpoint'i Ekleme
-
-`CaptureActivity.kt` içinde:
+### Cloud API Endpoint'i Değiştirme
 
 ```kotlin
-private suspend fun uploadToCloud(json: String) {
-    val client = OkHttpClient()
-    val body = json.toRequestBody("application/json".toMediaType())
-    
-    val request = Request.Builder()
-        .url("https://your-api.com/v1/identity-capture")
-        .post(body)
-        .addHeader("Authorization", "Bearer YOUR_TOKEN")
-        .build()
-    
-    val response = client.newCall(request).execute()
-    // Handle response...
-}
+val cloudClient = CloudInferenceClient(
+    baseUrl = "https://your-custom-server.com",
+    apiKey = "your_api_key"
+)
 ```
 
 ## 📊 JSON Schema
