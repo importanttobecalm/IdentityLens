@@ -1,0 +1,257 @@
+# IdentityLens - Smart Image Capture Module
+
+Android uygulaması için AI destekli görüntü yakalama ve ön işleme modülü.
+
+## 📋 Özellikler
+
+### ✨ Akıllı Görüntü Yakalama
+- **CameraX Entegrasyonu**: Modern Android kamera API'si ile yüksek kaliteli görüntü yakalama
+- **ML Kit Yüz Algılama**: Gerçek zamanlı yüz algılama ve pozisyon kontrolü
+- **Blur Algılama**: Laplacian varyans yöntemi ile netlik kontrolü
+- **Açı Doğrulama**: Yüz açısının optimal olduğundan emin olma (pitch, yaw, roll)
+- **Işık Analizi**: Lux sensörü ile çevre ışık ölçümü
+- **Yüz Boyutu Kontrolü**: Yüzün çerçevenin %30-60'ını kaplamasını sağlama
+
+### 🎯 Kalite Kontrol Sistemi
+- **Blur Detector**: Görüntü netligi analizi (variance threshold: 100.0)
+- **Face Angle Validator**: Euler açıları ile yüz yönelimi kontrolü
+- **Image Quality Analyzer**: Kapsamlı kalite puanlama sistemi
+- **Real-time Feedback**: Kullanıcıya anlık geri bildirim
+
+### 📦 Cloud API Ready
+- **Identity Packet Format**: JSON formatında standart veri paketi
+- **468-Point Face Mesh**: ML Kit ile detaylı yüz haritası (opsiyonel)
+- **Background Segmentation**: Arka plan ayrıştırma önizlemesi
+- **Rich Metadata**: Işık, kamera, cihaz bilgileri
+
+## 🏗️ Proje Yapısı
+
+```
+IdentityLens/
+├── app/
+│   ├── build.gradle                    # Dependency tanımları
+│   └── src/main/
+│       ├── AndroidManifest.xml         # Permissions & Activities
+│       ├── java/com/identitylens/app/
+│       │   ├── MainActivity.kt          # Ana ekran
+│       │   ├── quality/                 # Kalite kontrol sınıfları
+│       │   │   ├── BlurDetector.kt
+│       │   │   ├── FaceAngleValidator.kt
+│       │   │   └── ImageQualityAnalyzer.kt
+│       │   ├── models/                  # Veri modelleri
+│       │   │   └── IdentityPacket.kt
+│       │   ├── camera/                  # Kamera modülü
+│       │   │   └── CaptureActivity.kt
+│       │   └── metadata/                # Metadata toplama
+│       │       └── LightSensorManager.kt
+│       └── res/
+│           └── layout/
+│               ├── activity_main.xml
+│               └── activity_capture.xml
+├── build.gradle                        # Root build config
+└── settings.gradle
+```
+
+## 🚀 Kurulum
+
+### 1. Gereksinimler
+- Android Studio Arctic Fox veya üzeri
+- Minimum SDK: 24 (Android 7.0)
+- Target SDK: 34 (Android 14)
+- Kotlin 1.9.10+
+
+### 2. Projeyi Android Studio'da Açma
+```bash
+cd IdentityLens
+# Android Studio ile açın veya:
+code .
+```
+
+### 3. Dependencies
+Tüm bağımlılıklar `app/build.gradle` dosyasında tanımlıdır:
+- CameraX 1.3.1
+- ML Kit (Face Detection, Face Mesh, Segmentation)
+- Kotlin Coroutines
+- Gson
+- Retrofit/OkHttp (Cloud API için)
+
+### 4. Build & Run
+```bash
+# Gradle sync
+./gradlew clean build
+
+# Android cihaza yükleme
+./gradlew installDebug
+```
+
+## 📖 Kullanım
+
+### Temel Akış
+
+1. **Uygulama Başlatma**
+   - `MainActivity` açılır
+   - "Start Capture" butonuna basın
+   - Kamera izni verilir
+
+2. **Görüntü Yakalama**
+   - `CaptureActivity` açılır
+   - Kamera önizlemesi başlar
+   - Gerçek zamanlı kalite geri bildirimi gösterilir
+   - Yüzünüzü çerçeveye hizalayın
+   - 📷 butonuna basarak fotoğraf çekin
+
+3. **Kalite Kontrolü**
+   - Blur algılama çalışır
+   - Yüz açısı kontrol edilir
+   - Işık seviyesi analiz edilir
+   - Kalite puanı hesaplanır
+
+4. **Identity Packet Oluşturma**
+   - Geçerli fotoğraflar JSON formatında paketlenir
+   - Cloud API'ye gönderilmeye hazır hale gelir
+
+### Kod Örneği
+
+```kotlin
+// Kalite analizi
+val qualityAnalyzer = ImageQualityAnalyzer()
+val result = qualityAnalyzer.analyze(imageProxy, face, luxValue)
+
+if (result.passed) {
+    // Identity Packet oluştur
+    val packet = IdentityPacket(
+        timestamp = getCurrentTimestamp(),
+        image = ImageData(...),
+        facialData = FacialData(...),
+        metadata = CaptureMetadata(...),
+        qualityMetrics = QualityMetrics(...)
+    )
+    
+    // JSON'a çevir
+    val json = packet.toJson()
+    
+    // Cloud'a gönder
+    uploadToCloud(json)
+}
+```
+
+## ⚙️ Kalite Parametreleri
+
+### Blur Detection
+- **Threshold**: 100.0 (Laplacian variance)
+- **Analysis Resolution**: 640x480 (performance için)
+
+### Face Angle
+- **Max Pitch**: ±15° (yukarı/aşağı)
+- **Max Yaw**: ±15° (sağ/sol)
+- **Max Roll**: ±10° (eğim)
+
+### Lighting
+- **Min Lux**: 200
+- **Max Lux**: 1000
+- **Ideal Lux**: 400
+
+### Face Size
+- **Min Size**: 30% of frame
+- **Max Size**: 60% of frame
+
+## 🔧 Özelleştirme
+
+### Threshold Değerlerini Ayarlama
+
+```kotlin
+// BlurDetector.kt içinde
+private const val SHARP_THRESHOLD = 100.0  // Daha düşük = daha toleranslı
+
+// FaceAngleValidator.kt içinde
+private const val MAX_PITCH = 15.0f  // Degrees
+private const val MAX_YAW = 15.0f
+private const val MAX_ROLL = 10.0f
+
+// ImageQualityAnalyzer.kt içinde
+private const val MIN_LUX = 200.0
+private const val MAX_LUX = 1000.0
+```
+
+### Cloud API Endpoint'i Ekleme
+
+`CaptureActivity.kt` içinde:
+
+```kotlin
+private suspend fun uploadToCloud(json: String) {
+    val client = OkHttpClient()
+    val body = json.toRequestBody("application/json".toMediaType())
+    
+    val request = Request.Builder()
+        .url("https://your-api.com/v1/identity-capture")
+        .post(body)
+        .addHeader("Authorization", "Bearer YOUR_TOKEN")
+        .build()
+    
+    val response = client.newCall(request).execute()
+    // Handle response...
+}
+```
+
+## 📊 JSON Schema
+
+Identity Packet formatı:
+```json
+{
+  "version": "1.0",
+  "captureId": "uuid",
+  "timestamp": "2026-01-12T17:00:00Z",
+  "image": { "cleanFace": "base64", "resolution": {...} },
+  "facialData": { "faceMesh": {...}, "eulerAngles": {...} },
+  "segmentation": { "backgroundMask": "base64" },
+  "metadata": { "lighting": {...}, "camera": {...}, "device": {...} },
+  "qualityMetrics": { "overallScore": 0.95, "passed": true }
+}
+```
+
+## 🧪 Test Etme
+
+### Android Emulator
+```bash
+# Emulator başlat
+emulator -avd Pixel_5_API_34
+
+# Uygulamayı yükle
+./gradlew installDebug
+```
+
+### Fiziksel Cihaz
+1. USB Debugging'i etkinleştirin
+2. Cihazı bilgisayara bağlayın
+3. Android Studio'dan "Run" butonuna basın
+
+## 📝 Notlar
+
+### Performans İpuçları
+- Blur detection için görüntü 640x480'e düşürülür
+- ML Kit FAST mode kullanılır
+- Background segmentation 512x512 resolution'da çalışır
+- Coroutines ile async processing yapılır
+
+### Güvenlik
+- Kamera izni runtime'da istenir
+- Görüntüler geçici olarak işlenir
+- JSON transmission HTTPS üzerinden yapılmalı
+
+## 🤝 Katkıda Bulunma
+
+Bu modül IdentityLens projesi için geliştirilmiştir. 
+
+## 📄 Lisans
+
+MIT License - Detaylar için LICENSE dosyasına bakın.
+
+## 📞 Destek
+
+Sorularınız için:
+- GitHub Issues
+- Email: support@identitylens.com
+
+---
+
+**IdentityLens** - AI-Powered Smart Image Capture 📸✨
